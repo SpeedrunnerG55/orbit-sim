@@ -2,7 +2,7 @@ import cv2
 import imageio
 import numpy as np
 from numpy import array
-from math import sin, cos, tan, pi, sqrt, ceil, log, degrees, radians, atan2
+from math import sin, cos, tan, pi, sqrt, ceil, log, degrees, radians, atan2, gcd
 from time import time_ns, sleep
 from random import randint
 
@@ -101,14 +101,19 @@ maxPos = 2200
 def massRadius(body):
     return int(sqrt(body['mass']))
 
-def CenterOfMass(body1,body2):
-    m1 = body1['mass']
-    m2 = body1['mass']
-    pos1 = body1['position']
-    pos2 = body2['position']
-    centerX = (m1 * pos1[0] + m2 * pos2[0]) / (m1 + m2)
-    centerY = (m1 * pos1[1] + m2 * pos2[1]) / (m1 + m2)
-    return (centerX,centerY)
+def CenterOfMass(bodies):
+
+    # whatever this stands for
+    Xtop = sum([body['mass'] * body['position'][0] for body in bodies])
+    Ytop = sum([body['mass'] * body['position'][1] for body in bodies])
+
+    # total mass
+    mT = sum([body['mass'] for body in bodies])
+
+    COMX = Xtop / mT
+    COMY = Ytop / mT
+
+    return (COMX,COMY)
 
 def combineBody(body1,body2,bodies):
     if not (body1['fixed'] or body2['fixed']):
@@ -119,7 +124,7 @@ def combineBody(body1,body2,bodies):
         v2 = body1['velocity']
         m2 = body1['mass']
         mT = m1 + m2
-        COM = CenterOfMass(body1,body2)
+        COM = CenterOfMass([body1,body2])
         p1 = vectorMultiplacation(COM,v1,m1)
         p2 = vectorMultiplacation(COM,v2,m2)
         pT = vectorSum([p1,p2],(COM))
@@ -261,18 +266,17 @@ def plotVector(image,body,vector,color,type=None):
 
     if type != None:
         length = getDistance(oPose,oVect)
-        textPoint = [oPose[0]+int(length),oPose[1]-int(length)]
+        tagLength = int(sqrt(length)) * 2
+        textPoint = [oPose[0] + tagLength,oPose[1] - tagLength]
         cv2.line(image,textPoint,oPose,color)
         velocitytext ='{}{:.2}'.format(type,length)
         Label(image,velocitytext,textPoint,length,color)
 
     cv2.arrowedLine(image,oPose,oVect,color,1)
 
-def drawBodies(bodies):
-    global size
-    space = np.zeros((size,size,3),dtype=np.uint8)
+def drawBodies(image,bodies):
     for body in bodies:
-        plotBody(space,body)
+        plotBody(image,body)
 
         gravity = TotalGravity(body,bodies)
 
@@ -282,11 +286,11 @@ def drawBodies(bodies):
 
         # bigvector = vectorMultiplacation(pos,vector,1)
 
-        plotVector(space,body,velocityVector,[50,50,100],'velocity')
-        plotVector(space,body,gravity,[100,100,100],'gravity')
-        plotVector(space,body,aceleration,[100,50,100],'aceleration')
+        plotVector(image,body,velocityVector,[50,50,100],'velocity')
+        plotVector(image,body,gravity,[100,100,100],'gravity')
+        plotVector(image,body,aceleration,[100,50,100],'aceleration')
 
-    return space
+    return image
 
 def createGif(bodies):
     windowName = 'gif'
@@ -371,6 +375,38 @@ def plotGravityField(image,bodies):
                     plotVector(image,virtualBody,gravity,[100,100,100])
     return image
 
+def section(offset,i,point,WA,r):
+    return [intPoint(polarConversion(radians(j + offset),point,r)) for j in range(i * WA,(i + 1) * WA + 1)] + [point]
+
+def plotsymbol(image,point,r,colors,NS):
+    point = intPoint(offsetPoint(point))
+    NC = len(colors)
+    SA = int(360 / NS)
+    WA = int(SA / NC)
+
+    # angles = [[(k + (j * 180)) for j in range(2) for k in range(i * WA,(i + 1) * WA + 1)]for i in range(numColors)]
+    polys = [[section(SA * j,i,point,WA,r)for j in range(NS)] for i in range(NC)]
+
+    # print(array(polys))
+
+    # exit(0)
+
+    for i in range(len(polys)):
+        poly = polys[i]
+        color = colors[i]
+        poly = array(poly)
+
+        cv2.fillPoly(image,poly,color)
+        # cv2.polylines(image,[poly],True,color,10)
+
+    return image
+
+
+
+def plotCenterOfMass(image,bodies):
+    COM = CenterOfMass(bodies)
+    image = plotsymbol(image,COM,10,[[10,10,10],[10,50,50]],2)
+    return image
 
 size = 600
 
@@ -387,19 +423,29 @@ bodies = []
 
 
 bodies.append(createBody((-smallOffset,0),4000,0,0,color))
-bodies.append(createBody(( smallOffset,0),4000,0,0,color))
+bodies.append(createBody(( smallOffset,0),2000,0,0,color))
 
 
 # createGif(bodies)
 
+def random_color():
+    r = randint(50, 255)
+    g = randint(50, 255)
+    b = randint(50, 255)
+    return (b, g, r)
+
 while True:
+
+    frame = np.zeros((size,size,3),dtype=np.uint8)
 
     # if len(bodies) < 5:
         # bodies += [randBody()]
     sleep(.03)
-    frame = drawBodies(bodies)
+
+    frame = drawBodies(frame,bodies)
     # frame = plotL1(frame,bodies)
     # frame = plotGravityField(frame,bodies)
+    frame = plotCenterOfMass(frame,bodies)
     cv2.imshow('space',frame)
     cv2.waitKey(1)
     updateBodies(bodies)
