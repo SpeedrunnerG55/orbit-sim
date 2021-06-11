@@ -40,8 +40,7 @@ def getDistance(pos1,pos2):
     distance = sqrt(delta_x**2 + delta_y**2)
     return distance
 
-def vectorSum(vectors,body):
-    pos = body['position']
+def vectorSum(vectors,pos):
     x = sum([vector[0] - pos[0] for vector in vectors]) + pos[0]
     y = sum([vector[1] - pos[1] for vector in vectors]) + pos[1]
     return (x,y)
@@ -88,12 +87,13 @@ def gravity(body1,body2):
     return vector
 
 def TotalGravity(body,bodies):
-    return vectorSum([gravity(body,body2) for body2 in bodies if body2['position'] != body['position']],body)
+    return vectorSum([gravity(body,body2) for body2 in bodies if body2['position'] != body['position']],body['position'])
 
 def getForces(body,bodies):
+    pos = body['position']
     gravity = TotalGravity(body,bodies)
     # posible other forces
-    forceSum = vectorSum([gravity],body)
+    forceSum = vectorSum([gravity],pos)
     return forceSum
 
 maxPos = 2200
@@ -101,18 +101,52 @@ maxPos = 2200
 def massRadius(body):
     return int(sqrt(body['mass']))
 
+def CenterOfMass(body1,body2):
+    m1 = body1['mass']
+    m2 = body1['mass']
+    pos1 = body1['position']
+    pos2 = body2['position']
+    centerX = (m1 * pos1[0] + m2 * pos2[0]) / (m1 + m2)
+    centerY = (m1 * pos1[1] + m2 * pos2[1]) / (m1 + m2)
+    return (centerX,centerY)
+
 def combineBody(body1,body2,bodies):
-
     if not (body1['fixed'] or body2['fixed']):
-        body1['mass'] = body1['mass'] + body2['mass']
-        body1['velocity'] = vectorSum([body1['velocity'],body2['velocity']],body1)
-        body1['position'] = vectorSum([body1['position'],body2['position']],body1)
-        body1['places'] = []
+        pos1 = body1['position']
+        pos2 = body2['position']
+        v1 = body1['velocity']
+        m1 = body1['mass']
+        v2 = body1['velocity']
+        m2 = body1['mass']
+        mT = m1 + m2
+        COM = CenterOfMass(body1,body2)
+        p1 = vectorMultiplacation(COM,v1,m1)
+        p2 = vectorMultiplacation(COM,v2,m2)
+        pT = vectorSum([p1,p2],(COM))
 
-    if not body1['fixed']:
+        print(pT)
+
+        vT = vectorMultiplacation(COM,pT,1/mT)
+        body3 = {
+            'position':COM,
+            'mass':mT,
+            'velocity':vT,
+            'color':[50,30,20],
+            'fixed':False,
+            'places':[]
+        }
+        bodies.append(body3)
+        if body1['mass'] >= body2['mass']:
+            body3['places'] = body1['places']
+        else:
+            body3['places'] = body2['places']
         bodies.remove(body1)
-    elif not body2['fixed']:
         bodies.remove(body2)
+    elif body1['fixed']:
+        bodies.remove(body2)
+    else:
+        bodies.remove(body1)
+
 
 def updateBodies(bodies):
 
@@ -154,46 +188,83 @@ def updateBodies(bodies):
             if len(places) > maxPos:
                 places.pop(0)
 
-            newVelocity = vectorSum([velocityVector,velocityVector,aceleration,aceleration],body)
+            newVelocity = vectorSum([velocityVector,velocityVector,aceleration,aceleration],pos)
 
-            body['position'] = vectorSum([velocityVector,aceleration],body)
+            body['position'] = vectorSum([velocityVector,aceleration],pos)
 
             body['velocity'] = newVelocity
 
             index += 1
 
+def fitWidth(text,space):
+    font_scale = 10
+    font = cv2.FORMATTER_FMT_DEFAULT
+    scale = font_scale
+    (txt_w,txt_h),baseline = cv2.getTextSize(text, font, scale, 1)
+    while txt_w > space:
+        scale -= 0.05
+        (txt_w,txt_h),baseline = cv2.getTextSize(text, font, scale, 1)
+    return scale,txt_h + baseline
+
+def fitHeight(text,space):
+    font_scale = 10
+    font = cv2.FORMATTER_FMT_DEFAULT
+    scale = font_scale
+    txt_w,txt_h = cv2.getTextSize(text, font, font_scale, 1)[0]
+    while txt_h > space:
+        scale -= 0.05
+        txt_w,txt_h = cv2.getTextSize(text, font, scale, 1)[0]
+    return scale,txt_w
+
+def Label(image,text,pos,width,color):
+    font = cv2.FORMATTER_FMT_DEFAULT
+    scale,height = fitWidth(text,width)
+    cv2.putText(image,text,pos,font,scale,color,1)
+    pos[1] += height
+
 def plotBody(image,body):
     pos = body['position']
     Opos = offsetPoint(pos)
     mass = body['mass']
+    velocity = body['velocity']
+    angle = getAngle(pos,velocity)
+    speed = getDistance(pos,velocity)
     color = body['color']
+    Opos = intPoint(Opos)
     r = int(sqrt(mass))
 
-    Opos = intPoint(Opos)
+    textPoint = [Opos[0] + r,Opos[1] + r]
+
+    massText = 'mass :' + str(mass) + ' m unitz'
+    Label(image,massText,textPoint,r*2,[20,20,90])
+
+    velocitytext = 'speed : {:.2} px/t'.format(speed)
+    Label(image,velocitytext,textPoint,r*2,[90,20,20])
+
+    angletext = 'angle : {:.2} degrees'.format(degrees(angle))
+    Label(image,angletext,textPoint,r*2,[20,90,20])
 
     points = array(body['places'])
-
     if len(points) > 1:
         cv2.polylines(image,[points],False,[20,80,20])
-
     cv2.circle(image,Opos,r,color,2)
 
 def intPoint(point):
-    return (int(point[0]),int(point[1]))
+    return [int(point[0]),int(point[1])]
 
-def plotVector(image,body,vector,color):
+def plotVector(image,body,vector,color,type=None):
     pos = body['position']
 
-    oVect = offsetPoint(vector)
-    oPose = offsetPoint(pos)
+    oVect = intPoint(offsetPoint(vector))
+    oPose = intPoint(offsetPoint(pos))
 
-    # distance = getDistance(oPose, oVect)
-    # thickness = int(sqrt(distance))
-    # if thickness == 0:
-    #     thickness = 1
 
-    oVect = intPoint(oVect)
-    oPose = intPoint(oPose)
+    if type != None:
+        length = getDistance(oPose,oVect)
+        textPoint = [oPose[0]+int(length),oPose[1]-int(length)]
+        cv2.line(image,textPoint,oPose,color)
+        velocitytext ='{}{:.2}'.format(type,length)
+        Label(image,velocitytext,textPoint,length,color)
 
     cv2.arrowedLine(image,oPose,oVect,color,1)
 
@@ -203,17 +274,17 @@ def drawBodies(bodies):
     for body in bodies:
         plotBody(space,body)
 
-        forceSum = getForces(body,bodies)
+        gravity = TotalGravity(body,bodies)
 
         velocityVector = body['velocity']
 
-        aceleration = calcAcceleration(body,forceSum)
+        aceleration = calcAcceleration(body,gravity)
 
         # bigvector = vectorMultiplacation(pos,vector,1)
 
-        plotVector(space,body,velocityVector,[50,50,100])
-        plotVector(space,body,forceSum,[100,100,100])
-        plotVector(space,body,aceleration,[100,50,100])
+        plotVector(space,body,velocityVector,[50,50,100],'velocity')
+        plotVector(space,body,gravity,[100,100,100],'gravity')
+        plotVector(space,body,aceleration,[100,50,100],'aceleration')
 
     return space
 
@@ -254,7 +325,6 @@ def minDistancefromBodies(pos,bodies):
 
 def inLine(pos1,pos2,pos3):
     return getDistance(pos1,pos2) + getDistance(pos2,pos3) < getDistance(pos1,pos3) + .001
-
 
 def plotL1(image,bodies):
     step = int(size/90)
@@ -302,10 +372,10 @@ def plotGravityField(image,bodies):
     return image
 
 
-size = 900
+size = 600
 
 Offset = int(size / 6)
-smallOffset = int(size / 9)
+smallOffset = int(size / 5)
 
 G = .1
 
@@ -313,23 +383,23 @@ color = [50,30,20]
 
 bodies = []
 
-bodies.append(createBody((0,0),1500,.1,-90,color,True))
+# bodies.append(createBody((0,0),1500,.1,-90,color,True))
 
 
-# bodies.append(createBody((Offset + smallOffset,0),20,3,90,color))
-# bodies.append(createBody((Offset + smallOffset + smallOffset,0),20,1,90,color))
+bodies.append(createBody((-smallOffset,0),4000,0,0,color))
+bodies.append(createBody(( smallOffset,0),4000,0,0,color))
 
 
 # createGif(bodies)
 
 while True:
 
-    if len(bodies) < 5:
-        bodies += [randBody()]
-
+    # if len(bodies) < 5:
+        # bodies += [randBody()]
+    sleep(.03)
     frame = drawBodies(bodies)
-    frame = plotL1(frame,bodies)
-    frame = plotGravityField(frame,bodies)
+    # frame = plotL1(frame,bodies)
+    # frame = plotGravityField(frame,bodies)
     cv2.imshow('space',frame)
     cv2.waitKey(1)
     updateBodies(bodies)
