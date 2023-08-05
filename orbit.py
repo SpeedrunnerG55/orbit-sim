@@ -23,7 +23,7 @@ def randBody():
     pos = (x,y)
     distance = getDistance(pos,(0,0))
     mass = randint(1,10)
-    speed = randint(50,90) / 40
+    speed = randint(50,90) / 4
     angle = degrees(randint(0,360))
     color = [100,100,100]
     return createBody(pos,mass,speed,angle,color)
@@ -97,7 +97,6 @@ def getForces(body,bodies):
     # posible other forces
     forceSum = vectorSum([gravity],pos)
     return forceSum
-
 
 def massRadius(body):
     return int(sqrt(body.mass))
@@ -257,19 +256,15 @@ def plotBodies(image,bodies):
 
         gravity = TotalGravity(body,bodies)
 
-        velocityVector = body.velocity
+        velocity = body.velocity
 
         aceleration = calcAcceleration(body,gravity)
 
         pos = body.position
 
-        plotVector(image,body,vectorMultiplacation(pos,velocityVector,30),[50,50,100],'velocity')
-        plotVector(image,body,vectorMultiplacation(pos,gravity,10),[100,100,100],'gravity')
-        plotVector(image,body,vectorMultiplacation(pos,aceleration,2),[100,50,100],'aceleration')
-
-    return image
-
-
+        plotVector(image,body,velocity,[50,50,100],'velocity')
+        plotVector(image,body,gravity,[100,100,100],'gravity')
+        plotVector(image,body,aceleration,[100,50,100],'aceleration')
 
 def offsetPoint(pos):
     (x,y) = pos
@@ -286,31 +281,44 @@ def getClosestBody(pos,bodies):
 
 # def plotL12(image,body1,body2):
 
-def inLine(pos1,pos2,pos3):
-    return getDistance(pos1,pos2) + getDistance(pos2,pos3) < getDistance(pos1,pos3) + .01
+def get_cuberoot(x):
+    if x < 0:
+        x = abs(x)
+        cube_root = x**(1/3)*(-1)
+    else:
+        cube_root = x**(1/3)
+    return cube_root
+
+def L1(body1,body2):
+    M1 = body1.mass
+    M2 = body2.mass
+    P1 = body1.position
+    P2 = body2.position
+    R = getDistance(P1,P2)
+    # i guess this is an aproxomation?
+    r = R * get_cuberoot(M2/(3 * M1))
+    distanceFromCom = (M1 / (M1 + M2) * R - r)
+    centerOfMass = CenterOfMass([body1,body2])
+    angle = getAngle(P1,P2)
+    point = polarConversion(angle,centerOfMass,distanceFromCom)
+    return point
 
 def plotL1(image,body1,body2):
-    pos1 = body1.position
-    pos2 = body2.position
-    pos1 = intPoint(pos1)
-    pos2 = intPoint(pos2)
-    minX = min(pos1[0],pos2[0])
-    minY = min(pos1[1],pos2[1])
-    maxX = max(pos1[0],pos2[0])
-    maxY = max(pos1[1],pos2[1])
-    points = [(j,i) for j in range(minX,maxX) for i in range(minY,maxY) if inLine(pos1,(j,i),pos2)]
-    magnitudes = [pointGravity((j,i),[body1,body2]) for j in range(minX,maxX) for i in range(minY,maxY) if inLine(pos1,(j,i),pos2)]
-    # print(points)
-    if len(magnitudes) > 0:
-        point = points[magnitudes.index(min(magnitudes))]
+    point = L1(body1,body2)
+    if point != None:
         plotsymbol(image,point,6,[[20,90,90],[90,90,20]],1)
+
+def plotL2(image,body1,body2):
+    pass
+    # point = L2(body1,body2)
+    # plotsymbol(image,point,10,[[100,20,100],[20,40,20]],3)
 
 def plotLPoints(image,bodies):
     for body1 in bodies:
         for body2 in bodies:
-            if bodies.index(body2) > bodies.index(body1):
+            if body1.mass >= body2.mass and oneWay(body1,body2,bodies):
                 plotL1(image,body1,body2)
-    return image
+                # plotL2(image,body1,body2)
 
 def inAnyBody(point,bodies):
     return any(inBody(point,body) for body in bodies)
@@ -333,7 +341,6 @@ def plotGravityField(image,bodies):
             gravity = TotalGravity(virtualBody,bodies)
             if not (inAnyBody(gravity,bodies) or inAnyBody((x,y),bodies)):
                 plotVector(image,virtualBody,gravity,[100,100,100])
-    return image
 
 def VirtualParticle(point):
     return createBody(point,100,0,0,[0,0,0])
@@ -361,7 +368,6 @@ def plotGravityGradiant(image,bodies):
             (a,b) = intPoint(offsetPoint((x,y)))
             value = (magnitude / Maxg) * 255
             cv2.rectangle(image,(a-halfStep,b-halfStep),(a+halfStep,b+halfStep),[value,value,value],-1)
-    return image
 
 def section(offset,i,point,WA,r):
     return [intPoint(polarConversion(radians(j + offset),point,r)) for j in range(i * WA,(i + 1) * WA + 1)] + [point]
@@ -379,12 +385,10 @@ def plotsymbol(image,point,r,colors,NS):
         poly = array(poly)
         cv2.fillPoly(image,poly,color1)
         cv2.polylines(image,poly,True,color2)
-    return image
 
 def plotCenterOfMass(image,bodies):
     COM = CenterOfMass(bodies)
     image = plotsymbol(image,COM,10,[[20,20,20],[10,50,50]],2)
-    return image
 
 def random_color():
     r = randint(50, 255)
@@ -419,20 +423,18 @@ def plotGrid(image):
     point = intPoint(offsetPoint(center))
     cv2.circle(image,point,halfSize,[0,0,40],2)
 
-    return image
-
 def createFrame(bodies):
     global center
     center = CenterOfMass(bodies)
 
     frame = np.zeros((size,size,3),dtype=np.uint8)
 
-    # frame = plotGravityGradiant(frame,bodies)
-    # frame = plotGravityField(frame,bodies)
-    frame = plotBodies(frame,bodies)
-    # frame = plotLPoints(frame,bodies)
-    frame = plotCenterOfMass(frame,bodies)
-    # frame = plotGrid(frame)
+    plotGravityGradiant(frame,bodies)
+    # plotGravityField(frame,bodies)
+    plotBodies(frame,bodies)
+    # plotLPoints(frame,bodies)
+    plotCenterOfMass(frame,bodies)
+    # plotGrid(frame)
     return frame
 
 def createGif(bodies):
@@ -464,10 +466,9 @@ def createGif(bodies):
 size = 900
 halfSize = int(size/2)
 
-Offset = int(size / 6)
-smallOffset = int(size / 7)
+offset = int(size / 8)
 
-G = size / 1000
+G = size / 100
 
 color = [50,30,20]
 
@@ -475,17 +476,21 @@ bodies = []
 
 center = (0,0)
 
-while len(bodies) < 100:
-    bodies += [randBody()]
+
 
 # bodies.append(createBody((0,0),1500,.8,-90,color,True))
 
-# bodies.append(createBody((-smallOffset,0),400,.1,90,color))
-# bodies.append(createBody(( smallOffset,0),200,0,-90,color))
+bodies.append(createBody((0,0),3000,.33,90,color))
+bodies.append(createBody(( offset,0),100,16,-90,color))
+bodies.append(createBody((2 * offset,0),100,12,-90,color))
 
 # createGif(bodies)
 
 while True:
+
+    while len(bodies) < 5:
+        bodies += [randBody()]
+
     # sleep(.03)
     frame = createFrame(bodies)
     cv2.imshow('space',frame)
